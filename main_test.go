@@ -52,7 +52,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("TRUNCATE coins, price_history CASCADE"); err != nil {
+	if _, err := db.Exec("TRUNCATE coins, price_history RESTART IDENTITY CASCADE"); err != nil {
 		db.Close()
 		t.Fatal(err)
 	}

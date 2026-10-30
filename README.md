@@ -41,6 +41,13 @@ docker compose up -d --build
 # http://localhost:3000
 ```
 
+Без Docker/sudo — локальный PostgreSQL из распакованных бинарников:
+
+```bash
+scripts/pg-local.sh start          # initdb + сервер + роль/БД crypto
+go run .                           # DATABASE_URL по умолчанию подходит
+```
+
 Без `CMC_API_KEY` сервис стартует, но синхронизация отключена (`POST /api/sync` → `502`).
 
 ## Переменные окружения
@@ -87,8 +94,9 @@ docker compose up -d --build
 
 ```bash
 # локально: поднять БД и прогнать тесты
-docker compose up -d db
-TEST_DATABASE_URL=postgres://crypto:crypto@localhost:5432/crypto?sslmode=disable go test ./...
+scripts/pg-local.sh start
+export TEST_DATABASE_URL=postgres://crypto:crypto@127.0.0.1:5432/crypto?sslmode=disable
+go test ./...
 go test -race ./...
 ```
 
