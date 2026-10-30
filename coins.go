@@ -1,101 +1,56 @@
 package main
 
 import (
-	"database/sql"
+	"errors"
+
+	"gorm.io/gorm"
 )
 
-type Coin struct {
-	ID            int     `json:"id"`
-	Symbol        string  `json:"symbol"`
-	Name          string  `json:"name"`
-	PriceCurrency string  `json:"priceCurrency"`
-	LastUpdatedAt *string `json:"lastUpdatedAt"`
-	CreatedAt     string  `json:"createdAt"`
-}
-
-func scanCoin(row interface{ Scan(...any) error }) (Coin, error) {
-	var c Coin
-	var lastUpdated sql.NullString
-	err := row.Scan(&c.ID, &c.Symbol, &c.Name, &c.PriceCurrency, &lastUpdated, &c.CreatedAt)
-	if err != nil {
+func createCoin(db *gorm.DB, symbol, name, currency, createdAt string) (Coin, error) {
+	coin := Coin{Symbol: symbol, Name: name, PriceCurrency: currency, CreatedAt: createdAt}
+	if err := db.Create(&coin).Error; err != nil {
 		return Coin{}, err
 	}
-	if lastUpdated.Valid {
-		c.LastUpdatedAt = &lastUpdated.String
+	return coin, nil
+}
+
+func getCoin(db *gorm.DB, id int64) (Coin, error) {
+	var c Coin
+	if err := db.First(&c, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Coin{}, ErrNotFound
+		}
+		return Coin{}, err
 	}
 	return c, nil
 }
 
-func createCoin(db dbExecer, symbol, name, currency, createdAt string) (Coin, error) {
-	var id int
-	err := db.QueryRow(
-		"INSERT INTO coins (symbol, name, price_currency, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
-		symbol, name, currency, createdAt,
-	).Scan(&id)
-	if err != nil {
-		return Coin{}, err
-	}
-	return getCoin(db, id)
-}
-
-func getCoin(db dbExecer, id int) (Coin, error) {
-	c, err := scanCoin(db.QueryRow(
-		"SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins WHERE id = $1",
-		id,
-	))
-	if err == sql.ErrNoRows {
-		return Coin{}, ErrNotFound
-	}
-	return c, err
-}
-
 // allCoins возвращает все монеты (используется синхронизацией, без пагинации).
-func allCoins(db dbExecer) ([]Coin, error) {
-	rows, err := db.Query("SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins ORDER BY id ASC")
-	if err != nil {
+func allCoins(db *gorm.DB) ([]Coin, error) {
+	coins := make([]Coin, 0)
+	if err := db.Order("id ASC").Find(&coins).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	coins := []Coin{}
-	for rows.Next() {
-		c, err := scanCoin(rows)
-		if err != nil {
-			return nil, err
-		}
-		coins = append(coins, c)
-	}
-	return coins, rows.Err()
+	return coins, nil
 }
 
-func listCoins(db dbExecer, limit, offset int) ([]Coin, error) {
-	rows, err := db.Query(
-		"SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins ORDER BY id ASC LIMIT $1 OFFSET $2",
-		limit, offset,
-	)
-	if err != nil {
+func listCoins(db *gorm.DB, limit, offset int) ([]Coin, error) {
+	coins := make([]Coin, 0)
+	if err := db.Order("id ASC").Limit(limit).Offset(offset).Find(&coins).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	return coins, nil
+}
 
-	coins := []Coin{}
-	for rows.Next() {
-		c, err := scanCoin(rows)
-		if err != nil {
-			return nil, err
-		}
-		coins = append(coins, c)
+func countCoins(db *gorm.DB) (int, error) {
+	var n int64
+	if err := db.Model(&Coin{}).Count(&n).Error; err != nil {
+		return 0, err
 	}
-	return coins, rows.Err()
+	return int(n), nil
 }
 
-func countCoins(db dbExecer) (int, error) {
-	var n int
-	err := db.QueryRow("SELECT COUNT(*) FROM coins").Scan(&n)
-	return n, err
-}
-
-func updateCoin(db dbExecer, id int, symbol, name *string) (Coin, error) {
+func updateCoin(db *gorm.DB, id int64, symbol, name *string) (Coin, error) {
 	cur, err := getCoin(db, id)
 	if err != nil {
 		return Coin{}, err
@@ -107,25 +62,20 @@ func updateCoin(db dbExecer, id int, symbol, name *string) (Coin, error) {
 	if name != nil {
 		nextName = *name
 	}
-	if _, err := db.Exec("UPDATE coins SET symbol = $1, name = $2 WHERE id = $3", nextSymbol, nextName, id); err != nil {
+	if err := db.Model(&Coin{}).Where("id = ?", id).Updates(map[string]any{"symbol": nextSymbol, "name": nextName}).Error; err != nil {
 		return Coin{}, err
 	}
 	return getCoin(db, id)
 }
 
-func deleteCoin(db dbExecer, id int) (bool, error) {
-	res, err := db.Exec("DELETE FROM coins WHERE id = $1", id)
-	if err != nil {
-		return false, err
+func deleteCoin(db *gorm.DB, id int64) (bool, error) {
+	res := db.Delete(&Coin{}, id)
+	if res.Error != nil {
+		return false, res.Error
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	return res.RowsAffected > 0, nil
 }
 
-func touchCoin(db dbExecer, id int, updatedAt string) error {
-	_, err := db.Exec("UPDATE coins SET last_updated_at = $1 WHERE id = $2", updatedAt, id)
-	return err
+func touchCoin(db *gorm.DB, id int64, updatedAt string) error {
+	return db.Model(&Coin{}).Where("id = ?", id).Update("last_updated_at", updatedAt).Error
 }

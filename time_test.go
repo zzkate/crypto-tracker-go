@@ -24,7 +24,7 @@ func TestNormTime(t *testing.T) {
 // не должны «выпадать» из фильтров from/to на границе секунды.
 func TestPricesFilterSubSecondBoundary(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	if rec := doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"Bitcoin"}`); rec.Code != 201 {
 		t.Fatalf("create = %d", rec.Code)
@@ -56,7 +56,7 @@ func TestPricesFilterSubSecondBoundary(t *testing.T) {
 // даже если точность значений отличается.
 func TestLatestPriceMixedPrecision(t *testing.T) {
 	db := openTestDB(t)
-	defer db.Close()
+	defer closeDB(db)
 
 	c, err := createCoin(db, "BTC", "Bitcoin", "USD", "2026-01-01T00:00:00Z")
 	if err != nil {
@@ -81,7 +81,7 @@ func TestLatestPriceMixedPrecision(t *testing.T) {
 // TestPricesFilterTimezoneNormalized — фильтр с таймзоной приводится к UTC.
 func TestPricesFilterTimezoneNormalized(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	if rec := doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"Bitcoin"}`); rec.Code != 201 {
 		t.Fatalf("create = %d", rec.Code)

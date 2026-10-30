@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 const benchFetchedAt = "2026-01-01T10:00:00Z"
@@ -24,7 +25,7 @@ func (b *benchCmc) fetchPrices(ctx context.Context, symbols []string, currency s
 
 func BenchmarkCreateCoin(b *testing.B) {
 	db := openTestDB(b)
-	defer db.Close()
+	defer closeDB(db)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := createCoin(db, "B"+strconv.Itoa(i), "Coin", "USD", benchFetchedAt); err != nil {
@@ -35,7 +36,7 @@ func BenchmarkCreateCoin(b *testing.B) {
 
 func BenchmarkGetCoin(b *testing.B) {
 	db := openTestDB(b)
-	defer db.Close()
+	defer closeDB(db)
 	c, err := createCoin(db, "BTC", "Bitcoin", "USD", benchFetchedAt)
 	if err != nil {
 		b.Fatal(err)
@@ -51,7 +52,7 @@ func BenchmarkGetCoin(b *testing.B) {
 
 func BenchmarkListCoins(b *testing.B) {
 	db := openTestDB(b)
-	defer db.Close()
+	defer closeDB(db)
 	for i := 0; i < 200; i++ {
 		if _, err := createCoin(db, "C"+strconv.Itoa(i), "Coin", "USD", benchFetchedAt); err != nil {
 			b.Fatal(err)
@@ -68,7 +69,7 @@ func BenchmarkListCoins(b *testing.B) {
 
 func BenchmarkInsertPrice(b *testing.B) {
 	db := openTestDB(b)
-	defer db.Close()
+	defer closeDB(db)
 	c, err := createCoin(db, "BTC", "Bitcoin", "USD", benchFetchedAt)
 	if err != nil {
 		b.Fatal(err)
@@ -84,7 +85,7 @@ func BenchmarkInsertPrice(b *testing.B) {
 
 func BenchmarkListLatestPrices(b *testing.B) {
 	db := openTestDB(b)
-	defer db.Close()
+	defer closeDB(db)
 	for i := 0; i < 200; i++ {
 		c, err := createCoin(db, "L"+strconv.Itoa(i), "Coin", "USD", benchFetchedAt)
 		if err != nil {
@@ -105,7 +106,7 @@ func BenchmarkListLatestPrices(b *testing.B) {
 
 func BenchmarkListPrices(b *testing.B) {
 	db := openTestDB(b)
-	defer db.Close()
+	defer closeDB(db)
 	c, err := createCoin(db, "BTC", "Bitcoin", "USD", benchFetchedAt)
 	if err != nil {
 		b.Fatal(err)
@@ -126,7 +127,7 @@ func BenchmarkListPrices(b *testing.B) {
 
 // --- HTTP-обработчики (полный путь: маршрут + auth + JSON + БД) ---
 
-func benchServer(b *testing.B, client cmcAPI) (http.Handler, *sql.DB) {
+func benchServer(b *testing.B, client cmcAPI) (http.Handler, *gorm.DB) {
 	db := openTestDB(b)
 	if client == nil {
 		client = disabledClient{}
@@ -138,7 +139,7 @@ func benchServer(b *testing.B, client cmcAPI) (http.Handler, *sql.DB) {
 
 func BenchmarkHTTPListCoins(b *testing.B) {
 	h, db := benchServer(b, nil)
-	defer db.Close()
+	defer closeDB(db)
 	for i := 0; i < 100; i++ {
 		if _, err := createCoin(db, "H"+strconv.Itoa(i), "Coin", "USD", benchFetchedAt); err != nil {
 			b.Fatal(err)
@@ -159,7 +160,7 @@ func BenchmarkHTTPListCoins(b *testing.B) {
 
 func BenchmarkHTTPLatestPrices(b *testing.B) {
 	h, db := benchServer(b, nil)
-	defer db.Close()
+	defer closeDB(db)
 	for i := 0; i < 100; i++ {
 		c, err := createCoin(db, "P"+strconv.Itoa(i), "Coin", "USD", benchFetchedAt)
 		if err != nil {
@@ -191,7 +192,7 @@ func BenchmarkHTTPSync(b *testing.B) {
 		return m, nil
 	}}
 	h, db := benchServer(b, client)
-	defer db.Close()
+	defer closeDB(db)
 	for i := 0; i < 50; i++ {
 		if _, err := createCoin(db, "S"+strconv.Itoa(i), "Coin", "USD", benchFetchedAt); err != nil {
 			b.Fatal(err)

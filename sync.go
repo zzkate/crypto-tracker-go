@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"log"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type cmcAPI interface {
@@ -23,7 +24,7 @@ func isRetryableError(err error) bool {
 }
 
 type syncService struct {
-	db           *sql.DB
+	db           *gorm.DB
 	client       cmcAPI
 	currency     string
 	batchSize    int
@@ -39,7 +40,7 @@ type syncResult struct {
 	Skipped int `json:"skipped"`
 }
 
-func newSyncService(db *sql.DB, client cmcAPI, currency string, batchSize, maxRetries, retryBackoffMS int) *syncService {
+func newSyncService(db *gorm.DB, client cmcAPI, currency string, batchSize, maxRetries, retryBackoffMS int) *syncService {
 	return &syncService{
 		db:           db,
 		client:       client,
@@ -94,28 +95,25 @@ func (s *syncService) syncOnce(ctx context.Context) (syncResult, error) {
 	fetchedAt := canonTime(time.Now())
 
 	// Пишем в одной транзакции: атомарно и быстрее, чем N автокоммитов.
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return syncResult{}, err
-	}
-	defer tx.Rollback() // no-op после Commit
-
 	result := syncResult{}
-	for _, c := range coins {
-		p, ok := prices[c.Symbol]
-		if !ok {
-			result.Skipped++
-			continue
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, c := range coins {
+			p, ok := prices[c.Symbol]
+			if !ok {
+				result.Skipped++
+				continue
+			}
+			if _, err := insertPrice(tx, c.ID, p, s.currency, fetchedAt); err != nil {
+				return err
+			}
+			if err := touchCoin(tx, c.ID, fetchedAt); err != nil {
+				return err
+			}
+			result.Updated++
 		}
-		if _, err := insertPrice(tx, c.ID, p, s.currency, fetchedAt); err != nil {
-			return syncResult{}, err
-		}
-		if err := touchCoin(tx, c.ID, fetchedAt); err != nil {
-			return syncResult{}, err
-		}
-		result.Updated++
-	}
-	if err := tx.Commit(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return syncResult{}, err
 	}
 	return result, nil

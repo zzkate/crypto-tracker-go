@@ -1,11 +1,12 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -50,11 +51,11 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func metricsHandler(db *sql.DB) http.HandlerFunc {
+func metricsHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		coins, _ := countCoins(db)
-		var points int
-		_ = db.QueryRow("SELECT COUNT(*) FROM price_history").Scan(&points)
+		var points int64
+		_ = db.Model(&PricePoint{}).Count(&points).Error
 
 		reqs := httpRequests.Load()
 		avg := int64(0)

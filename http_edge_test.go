@@ -8,7 +8,7 @@ import (
 
 func TestPaginationBounds(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	for _, q := range []string{"?limit=0", "?limit=-1", "?limit=1001", "?limit=abc", "?offset=-1", "?offset=abc"} {
 		rec := doReq(t, h, http.MethodGet, "/api/coins"+q, "")
@@ -20,7 +20,7 @@ func TestPaginationBounds(t *testing.T) {
 
 func TestUpdateCoinDuplicateSymbol(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	if rec := doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"Bitcoin"}`); rec.Code != 201 {
 		t.Fatalf("create BTC = %d", rec.Code)
@@ -37,7 +37,7 @@ func TestUpdateCoinDuplicateSymbol(t *testing.T) {
 
 func TestAuthWrongToken(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/coins", nil)
 	req.Header.Set("Authorization", "Bearer wrong-key")

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 type mockCmc struct {
@@ -27,7 +28,7 @@ func (m *mockCmc) fetchPrices(ctx context.Context, symbols []string, currency st
 	return m.fn(ctx, symbols, currency)
 }
 
-func newTestServer(t *testing.T, client cmcAPI) (http.Handler, *app, *sql.DB, *syncService) {
+func newTestServer(t *testing.T, client cmcAPI) (http.Handler, *app, *gorm.DB, *syncService) {
 	t.Helper()
 	db := openTestDB(t)
 	if client == nil {
@@ -42,7 +43,7 @@ func newTestServer(t *testing.T, client cmcAPI) (http.Handler, *app, *sql.DB, *s
 	return app.routes(), app, db, syncSvc
 }
 
-func openTestDB(tb testing.TB) *sql.DB {
+func openTestDB(tb testing.TB) *gorm.DB {
 	tb.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -52,8 +53,8 @@ func openTestDB(tb testing.TB) *sql.DB {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	if _, err := db.Exec("TRUNCATE coins, price_history RESTART IDENTITY CASCADE"); err != nil {
-		db.Close()
+	if err := db.Exec("TRUNCATE coins, price_history RESTART IDENTITY CASCADE").Error; err != nil {
+		closeDB(db)
 		tb.Fatal(err)
 	}
 	return db
@@ -84,7 +85,7 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 
 func TestHealthAndAuth(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	if rec := doReq(t, h, http.MethodGet, "/health", ""); rec.Code != 200 {
 		t.Fatalf("health = %d", rec.Code)
@@ -107,7 +108,7 @@ func TestHealthAndAuth(t *testing.T) {
 
 func TestCoinsCRUD(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	rec := doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"btc","name":"Bitcoin"}`)
 	if rec.Code != 201 {
@@ -163,7 +164,7 @@ func TestCoinsCRUD(t *testing.T) {
 
 func TestValidation(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	cases := []struct {
 		method, path, body string
@@ -195,7 +196,7 @@ func TestValidation(t *testing.T) {
 
 func TestSQLInjection(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	payload := "x'; DROP TABLE coins;--"
 	rec := doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"`+payload+`"}`)
@@ -224,7 +225,7 @@ func TestSQLInjection(t *testing.T) {
 
 func TestPrices(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"Bitcoin"}`)
 	doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"ETH","name":"Ethereum"}`)
@@ -277,7 +278,7 @@ func TestPrices(t *testing.T) {
 
 func TestPagination(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	for _, s := range []string{"S0", "S1", "S2", "S3", "S4"} {
 		doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"`+s+`","name":"`+s+`"}`)
@@ -308,7 +309,7 @@ func TestSyncOnce(t *testing.T) {
 		return m, nil
 	}}
 	h, _, db, svc := newTestServer(t, client)
-	defer db.Close()
+	defer closeDB(db)
 
 	doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"Bitcoin"}`)
 	doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"ETH","name":"Ethereum"}`)
@@ -334,7 +335,7 @@ func TestSyncBatching(t *testing.T) {
 		return m, nil
 	}}
 	db := openTestDB(t)
-	defer db.Close()
+	defer closeDB(db)
 	svc := newSyncService(db, client, "USD", 2, 0, 200)
 
 	for i := 0; i < 5; i++ {
@@ -357,7 +358,7 @@ func TestSyncUpstreamError(t *testing.T) {
 		return nil, &cmcError{Status: 500, Message: "upstream down"}
 	}}
 	h, _, db, _ := newTestServer(t, client)
-	defer db.Close()
+	defer closeDB(db)
 
 	doReq(t, h, http.MethodPost, "/api/coins", `{"symbol":"BTC","name":"Bitcoin"}`)
 
@@ -387,7 +388,7 @@ func TestSyncSkipOnConcurrent(t *testing.T) {
 		return map[string]float64{"BTC": 1}, nil
 	}}
 	db := openTestDB(t)
-	defer db.Close()
+	defer closeDB(db)
 	svc := newSyncService(db, client, "USD", 100, 0, 200)
 	if _, err := createCoin(db, "BTC", "Bitcoin", "USD", "2026-01-01T00:00:00Z"); err != nil {
 		t.Fatal(err)
@@ -411,7 +412,7 @@ func TestSyncSkipOnConcurrent(t *testing.T) {
 
 func TestMetricsAndDocs(t *testing.T) {
 	h, _, db, _ := newTestServer(t, nil)
-	defer db.Close()
+	defer closeDB(db)
 
 	if rec := doReq(t, h, http.MethodGet, "/metrics", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "http_requests_total") {
 		t.Fatalf("metrics = %d", rec.Code)

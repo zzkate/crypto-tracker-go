@@ -1,146 +1,78 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
-	"strings"
+	"errors"
+
+	"gorm.io/gorm"
 )
 
-type PricePoint struct {
-	ID        int     `json:"id"`
-	CoinID    int     `json:"coinId"`
-	Price     float64 `json:"price"`
-	Currency  string  `json:"currency"`
-	FetchedAt string  `json:"fetchedAt"`
-}
-
-type LatestPrice struct {
-	CoinID    int      `json:"coinId"`
-	Symbol    string   `json:"symbol"`
-	Name      string   `json:"name"`
-	Price     *float64 `json:"price"`
-	Currency  string   `json:"currency"`
-	FetchedAt *string  `json:"fetchedAt"`
-}
-
-func insertPrice(db dbExecer, coinID int, price float64, currency, fetchedAt string) (PricePoint, error) {
+func insertPrice(db *gorm.DB, coinID int64, price float64, currency, fetchedAt string) (PricePoint, error) {
 	fetchedAt = normTime(fetchedAt)
-	var id int
-	err := db.QueryRow(
-		"INSERT INTO price_history (coin_id, price, currency, fetched_at) VALUES ($1, $2, $3, $4) RETURNING id",
-		coinID, price, currency, fetchedAt,
-	).Scan(&id)
-	if err != nil {
+	p := PricePoint{CoinID: coinID, Price: price, Currency: currency, FetchedAt: fetchedAt}
+	if err := db.Create(&p).Error; err != nil {
 		return PricePoint{}, err
 	}
-	return PricePoint{ID: id, CoinID: coinID, Price: price, Currency: currency, FetchedAt: fetchedAt}, nil
+	return p, nil
 }
 
-func listPrices(db dbExecer, coinID int, from, to string, limit, offset int) ([]PricePoint, error) {
-	clauses := []string{"coin_id = $1"}
-	args := []any{coinID}
+func listPrices(db *gorm.DB, coinID int64, from, to string, limit, offset int) ([]PricePoint, error) {
+	q := db.Where("coin_id = ?", coinID)
 	if from != "" {
-		clauses = append(clauses, fmt.Sprintf("fetched_at >= $%d", len(args)+1))
-		args = append(args, from)
+		q = q.Where("fetched_at >= ?", from)
 	}
 	if to != "" {
-		clauses = append(clauses, fmt.Sprintf("fetched_at <= $%d", len(args)+1))
-		args = append(args, to)
+		q = q.Where("fetched_at <= ?", to)
 	}
-	limitPh := fmt.Sprintf("$%d", len(args)+1)
-	offsetPh := fmt.Sprintf("$%d", len(args)+2)
-	args = append(args, limit, offset)
-
-	query := "SELECT id, coin_id, price, currency, fetched_at FROM price_history WHERE " +
-		strings.Join(clauses, " AND ") +
-		" ORDER BY fetched_at DESC, id DESC LIMIT " + limitPh + " OFFSET " + offsetPh
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
+	points := make([]PricePoint, 0)
+	if err := q.Order("fetched_at DESC, id DESC").Limit(limit).Offset(offset).Find(&points).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	points := []PricePoint{}
-	for rows.Next() {
-		var p PricePoint
-		if err := rows.Scan(&p.ID, &p.CoinID, &p.Price, &p.Currency, &p.FetchedAt); err != nil {
-			return nil, err
-		}
-		points = append(points, p)
-	}
-	return points, rows.Err()
+	return points, nil
 }
 
-func countPrices(db dbExecer, coinID int, from, to string) (int, error) {
-	clauses := []string{"coin_id = $1"}
-	args := []any{coinID}
+func countPrices(db *gorm.DB, coinID int64, from, to string) (int, error) {
+	q := db.Model(&PricePoint{}).Where("coin_id = ?", coinID)
 	if from != "" {
-		clauses = append(clauses, fmt.Sprintf("fetched_at >= $%d", len(args)+1))
-		args = append(args, from)
+		q = q.Where("fetched_at >= ?", from)
 	}
 	if to != "" {
-		clauses = append(clauses, fmt.Sprintf("fetched_at <= $%d", len(args)+1))
-		args = append(args, to)
+		q = q.Where("fetched_at <= ?", to)
 	}
-	var n int
-	err := db.QueryRow("SELECT COUNT(*) FROM price_history WHERE "+strings.Join(clauses, " AND "), args...).Scan(&n)
-	return n, err
+	var n int64
+	if err := q.Count(&n).Error; err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
-func getLatestPrice(db dbExecer, coinID int) (PricePoint, error) {
+func getLatestPrice(db *gorm.DB, coinID int64) (PricePoint, error) {
 	var p PricePoint
-	err := db.QueryRow(
-		"SELECT id, coin_id, price, currency, fetched_at FROM price_history WHERE coin_id = $1 ORDER BY fetched_at DESC, id DESC LIMIT 1",
-		coinID,
-	).Scan(&p.ID, &p.CoinID, &p.Price, &p.Currency, &p.FetchedAt)
-	if err == sql.ErrNoRows {
-		return PricePoint{}, ErrNotFound
+	if err := db.Where("coin_id = ?", coinID).Order("fetched_at DESC, id DESC").First(&p).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return PricePoint{}, ErrNotFound
+		}
+		return PricePoint{}, err
 	}
-	return p, err
+	return p, nil
 }
 
-func listLatestPrices(db dbExecer, limit, offset int) ([]LatestPrice, error) {
-	// Каждый подзапрос — index-scan по (coin_id, fetched_at DESC, id DESC): оптимально.
-	rows, err := db.Query(
-		`SELECT c.id AS coin_id, c.symbol, c.name, c.price_currency,
-		        p.price, p.currency, p.fetched_at
-		 FROM coins c
-		 LEFT JOIN price_history p ON p.id = (
+func listLatestPrices(db *gorm.DB, limit, offset int) ([]LatestPrice, error) {
+	// Каждый подзапрос — index-scan по (coin_id, fetched_at DESC, id DESC).
+	latest := make([]LatestPrice, 0)
+	err := db.Raw(`
+		SELECT c.id AS coin_id, c.symbol, c.name,
+		       COALESCE(p.currency, c.price_currency) AS currency,
+		       p.price, p.fetched_at
+		FROM coins c
+		LEFT JOIN price_history p ON p.id = (
 		   SELECT id FROM price_history
 		   WHERE coin_id = c.id
 		   ORDER BY fetched_at DESC, id DESC
 		   LIMIT 1
-		 )
-		 ORDER BY c.id ASC LIMIT $1 OFFSET $2`,
-		limit, offset,
-	)
+		)
+		ORDER BY c.id ASC LIMIT ? OFFSET ?`, limit, offset).Scan(&latest).Error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	latest := []LatestPrice{}
-	for rows.Next() {
-		var l LatestPrice
-		var priceCurrency string
-		var currencyCol sql.NullString
-		var price sql.NullFloat64
-		var fetched sql.NullString
-		if err := rows.Scan(&l.CoinID, &l.Symbol, &l.Name, &priceCurrency, &price, &currencyCol, &fetched); err != nil {
-			return nil, err
-		}
-		l.Currency = priceCurrency
-		if currencyCol.Valid {
-			l.Currency = currencyCol.String
-		}
-		if price.Valid {
-			l.Price = &price.Float64
-		}
-		if fetched.Valid {
-			l.FetchedAt = &fetched.String
-		}
-		latest = append(latest, l)
-	}
-	return latest, rows.Err()
+	return latest, nil
 }

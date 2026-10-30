@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -10,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 //go:embed openapi.json
@@ -19,12 +20,12 @@ var openapiJSON []byte
 var docsHTML []byte
 
 type app struct {
-	db      *sql.DB
+	db      *gorm.DB
 	config  Config
 	syncSvc *syncService
 }
 
-func newApp(db *sql.DB, config Config, syncSvc *syncService) *app {
+func newApp(db *gorm.DB, config Config, syncSvc *syncService) *app {
 	return &app{db: db, config: config, syncSvc: syncSvc}
 }
 

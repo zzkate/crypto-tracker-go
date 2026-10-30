@@ -23,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
-	defer db.Close()
+	defer closeDB(db)
 
 	var client cmcAPI
 	if cfg.CmcAPIKey != "" {

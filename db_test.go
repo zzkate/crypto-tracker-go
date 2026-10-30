@@ -6,7 +6,7 @@ import "testing"
 // должно удалять всю её ценовую историю.
 func TestDeleteCoinCascadesPrices(t *testing.T) {
 	db := openTestDB(t)
-	defer db.Close()
+	defer closeDB(db)
 
 	c, err := createCoin(db, "BTC", "Bitcoin", "USD", "2026-01-01T00:00:00Z")
 	if err != nil {
@@ -32,8 +32,8 @@ func TestDeleteCoinCascadesPrices(t *testing.T) {
 	}
 
 	// Прямая проверка на уровне SQL (не через репозиторий).
-	var total int
-	if err := db.QueryRow("SELECT COUNT(*) FROM price_history WHERE coin_id = $1", c.ID).Scan(&total); err != nil {
+	var total int64
+	if err := db.Model(&PricePoint{}).Where("coin_id = ?", c.ID).Count(&total).Error; err != nil {
 		t.Fatal(err)
 	}
 	if total != 0 {
@@ -44,7 +44,7 @@ func TestDeleteCoinCascadesPrices(t *testing.T) {
 // TestDeleteCoinUnknown возвращает false без ошибки.
 func TestDeleteCoinUnknown(t *testing.T) {
 	db := openTestDB(t)
-	defer db.Close()
+	defer closeDB(db)
 	ok, err := deleteCoin(db, 999999)
 	if err != nil {
 		t.Fatal(err)

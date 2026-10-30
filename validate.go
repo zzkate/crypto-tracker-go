@@ -25,11 +25,11 @@ func badRequest(format string, args ...any) *httpError {
 	return &httpError{Status: http.StatusBadRequest, Code: "validation_error", Message: fmt.Sprintf(format, args...)}
 }
 
-func parseID(s string) (int, error) {
+func parseID(s string) (int64, error) {
 	if s == "" {
 		return 0, badRequest("id must be a positive integer")
 	}
-	id, err := strconv.Atoi(s)
+	id, err := strconv.ParseInt(s, 10, 64)
 	if err != nil || id <= 0 {
 		return 0, badRequest("id must be a positive integer")
 	}

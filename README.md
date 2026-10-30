@@ -9,7 +9,7 @@ Backend для отслеживания криптовалют и агрегац
 - Актуальные цены всех монет и история цен по монете (фильтры + пагинация).
 - Фоновая синхронизация с CoinMarketCap + ручной запуск.
 - Таймауты и обработка ошибок внешнего API, ретраи по 5xx/429/сети.
-- PostgreSQL через `pgx` — raw SQL, без ORM; пул соединений (параллельные чтения).
+- PostgreSQL через GORM (пул соединений для параллельных чтений).
 - Метрики Prometheus (`/metrics`).
 - Swagger UI (`/docs`) и OpenAPI 3.0 (`/openapi.json`).
 - Graceful shutdown по SIGINT/SIGTERM.
@@ -18,7 +18,7 @@ Backend для отслеживания криптовалют и агрегац
 ## Стек
 
 - Go 1.27, стандартная библиотека `net/http` (роутинг через `http.ServeMux` 1.22+).
-- PostgreSQL: `github.com/jackc/pgx/v5` (пул соединений, без ORM).
+- PostgreSQL: GORM (`gorm.io/gorm` + `gorm.io/driver/postgres`, поверх `pgx`).
 - HTTP-клиент CoinMarketCap: `net/http` с таймаутом.
 - Тесты: `testing` + `net/http/httptest`.
 - Swagger UI: статичный HTML на CDN (без npm/Go-зависимостей для UI).
