@@ -44,8 +44,52 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
       - name: go test -race
-        run: go test -race ./...
+        run: go test -race -count=1 ./...
+
+      - name: coverage
+        run: |
+          go test -coverprofile=coverage.out -count=1 ./...
+          go tool cover -func=coverage.out | tail -1
+
+      - name: shuffle (order independence)
+        run: go test -shuffle=on -count=1 ./...
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem -run=^$ -benchtime=200ms -count=1 ./...
 
   docker:
     name: Docker build & smoke

@@ -1,7 +1,6 @@
 # Crypto Price Tracker (Go)
 
 Backend для отслеживания криптовалют и агрегации цен из CoinMarketCap.
-Go-версия проекта (аналог `crypto-tracker` на Node.js/TypeScript).
 
 ## Возможности
 
@@ -101,3 +100,12 @@ go test -race ./...
 ```
 
 В CI тесты гоняются с сервисом `postgres:16-alpine`.
+
+## Бенчмарки
+
+Микробенчмарки и HTTP-бенчмарки — в `bench_test.go`, сравнение Go↔Node.js и
+нагрузочный тест — см. [BENCHMARK.md](BENCHMARK.md).
+
+```bash
+go test -bench=. -benchmem -run=^$
+```

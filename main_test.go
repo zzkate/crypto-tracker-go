@@ -42,19 +42,19 @@ func newTestServer(t *testing.T, client cmcAPI) (http.Handler, *app, *sql.DB, *s
 	return app.routes(), app, db, syncSvc
 }
 
-func openTestDB(t *testing.T) *sql.DB {
-	t.Helper()
+func openTestDB(tb testing.TB) *sql.DB {
+	tb.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
+		tb.Skip("TEST_DATABASE_URL is not set")
 	}
 	db, err := openDB(dsn)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if _, err := db.Exec("TRUNCATE coins, price_history RESTART IDENTITY CASCADE"); err != nil {
 		db.Close()
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return db
 }
