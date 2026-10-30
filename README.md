@@ -101,6 +101,12 @@ go test -race ./...
 
 В CI тесты гоняются с сервисом `postgres:16-alpine`.
 
+Линтинг — `golangci-lint` (конфиг в `.golangci.yml`):
+
+```bash
+golangci-lint run ./...
+```
+
 ## Бенчмарки
 
 Микробенчмарки и HTTP-бенчмарки — в `bench_test.go`, сравнение Go↔Node.js и
