@@ -10,7 +10,7 @@ Go-версия проекта (аналог `crypto-tracker` на Node.js/TypeS
 - Актуальные цены всех монет и история цен по монете (фильтры + пагинация).
 - Фоновая синхронизация с CoinMarketCap + ручной запуск.
 - Таймауты и обработка ошибок внешнего API, ретраи по 5xx/429/сети.
-- SQLite через `modernc.org/sqlite` — raw SQL, без ORM.
+- PostgreSQL через `pgx` — raw SQL, без ORM; пул соединений (параллельные чтения).
 - Метрики Prometheus (`/metrics`).
 - Swagger UI (`/docs`) и OpenAPI 3.0 (`/openapi.json`).
 - Graceful shutdown по SIGINT/SIGTERM.
@@ -19,27 +19,29 @@ Go-версия проекта (аналог `crypto-tracker` на Node.js/TypeS
 ## Стек
 
 - Go 1.27, стандартная библиотека `net/http` (роутинг через `http.ServeMux` 1.22+).
-- SQLite: `modernc.org/sqlite` (pure Go, без cgo, без ORM).
+- PostgreSQL: `github.com/jackc/pgx/v5` (пул соединений, без ORM).
 - HTTP-клиент CoinMarketCap: `net/http` с таймаутом.
 - Тесты: `testing` + `net/http/httptest`.
 - Swagger UI: статичный HTML на CDN (без npm/Go-зависимостей для UI).
 
 ## Запуск
 
+Нужен PostgreSQL. Через Docker:
+
 ```bash
 cp .env.example .env   # заполнить APP_API_KEY (и CMC_API_KEY для синхронизации)
-go run .
-# http://localhost:3000/docs
+docker compose up -d db            # поднять только PostgreSQL
+go run .                           # http://localhost:3000/docs
 ```
 
-Без `CMC_API_KEY` сервис стартует, но синхронизация отключена (`POST /api/sync` → `502`).
-
-## Docker
+Или весь стек в Docker:
 
 ```bash
 docker compose up -d --build
 # http://localhost:3000
 ```
+
+Без `CMC_API_KEY` сервис стартует, но синхронизация отключена (`POST /api/sync` → `502`).
 
 ## Переменные окружения
 
@@ -52,7 +54,7 @@ docker compose up -d --build
 | `CMC_TIMEOUT_MS` | `5000` | Таймаут запроса к CMC |
 | `SYNC_INTERVAL_MS` | `60000` | Интервал фоновой синхронизации |
 | `PRICE_CURRENCY` | `USD` | Единая валюта цен |
-| `DB_PATH` | `data/crypto.db` | Путь к SQLite |
+| `DATABASE_URL` | `postgres://crypto:crypto@localhost:5432/crypto?sslmode=disable` | Строка подключения к PostgreSQL |
 | `CMC_BATCH_SIZE` | `100` | Символов в одном запросе |
 | `CMC_MAX_RETRIES` | `2` | Повторов при ошибке |
 | `CMC_RETRY_BACKOFF_MS` | `200` | База задержки между повторами |
@@ -81,7 +83,13 @@ docker compose up -d --build
 
 ## Тесты
 
+Тесты с БД требуют запущенный PostgreSQL (переменная `TEST_DATABASE_URL`; без неё они пропускаются).
+
 ```bash
-go test ./...
+# локально: поднять БД и прогнать тесты
+docker compose up -d db
+TEST_DATABASE_URL=postgres://crypto:crypto@localhost:5432/crypto?sslmode=disable go test ./...
 go test -race ./...
 ```
+
+В CI тесты гоняются с сервисом `postgres:16-alpine`.

@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
 #
 # Ручной интеграционный прогон с реальным CoinMarketCap.
-# Требует CMC_API_KEY и APP_API_KEY в окружении. Ключи не печатаются.
+# Требует CMC_API_KEY, APP_API_KEY и DATABASE_URL в окружении. Ключи не печатаются.
 set -euo pipefail
 
 : "${CMC_API_KEY:?CMC_API_KEY is required}"
 : "${APP_API_KEY:?APP_API_KEY is required}"
+: "${DATABASE_URL:?DATABASE_URL is required}"
 
 BIN="${BIN:-/tmp/crypto-tracker-go}"
 PORT="${PORT:-3000}"
 SYMBOLS="${SYMBOLS:-BTC,ETH}"
 CURRENCY="${PRICE_CURRENCY:-USD}"
 BASE="http://127.0.0.1:${PORT}"
-DB=/tmp/crypto-integration.db
 
-rm -f "$DB" "$DB-wal" "$DB-shm"
 PORT="$PORT" APP_API_KEY="$APP_API_KEY" CMC_API_KEY="$CMC_API_KEY" \
-  PRICE_CURRENCY="$CURRENCY" DB_PATH="$DB" \
+  PRICE_CURRENCY="$CURRENCY" DATABASE_URL="$DATABASE_URL" \
   "$BIN" >/tmp/crypto-integration.log 2>&1 &
 PID=$!
 cleanup() {
   kill "$PID" 2>/dev/null || true
   wait "$PID" 2>/dev/null || true
-  rm -f "$DB" "$DB-wal" "$DB-shm"
 }
 trap cleanup EXIT
 

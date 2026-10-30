@@ -19,7 +19,7 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	db, err := openDB(cfg.DBPath)
+	db, err := openDBWithRetry(cfg.DatabaseURL, 10, time.Second)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}

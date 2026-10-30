@@ -17,6 +17,20 @@ jobs:
     name: Real CoinMarketCap sync
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,6 +51,7 @@ jobs:
           SYMBOLS: ${{ inputs.symbols }}
           PRICE_CURRENCY: ${{ inputs.currency }}
           PORT: '3000'
+          DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
         run: bash scripts/integration.sh
 
       - name: Server log on failure

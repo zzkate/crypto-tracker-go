@@ -18,7 +18,7 @@ type Config struct {
 	CmcTimeoutMS    int
 	SyncIntervalMS  int
 	Currency        string
-	DBPath          string
+	DatabaseURL     string
 	CmcBatchSize    int
 	CmcMaxRetries   int
 	CmcRetryBackoff int
@@ -77,9 +77,9 @@ func LoadConfig() (Config, error) {
 	if cfg.SyncIntervalMS, err = positiveInt(os.Getenv("SYNC_INTERVAL_MS"), "SYNC_INTERVAL_MS", 60000); err != nil {
 		return cfg, err
 	}
-	cfg.DBPath = os.Getenv("DB_PATH")
-	if cfg.DBPath == "" {
-		cfg.DBPath = "data/crypto.db"
+	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
+	if cfg.DatabaseURL == "" {
+		cfg.DatabaseURL = "postgres://crypto:crypto@localhost:5432/crypto?sslmode=disable"
 	}
 	if cfg.CmcBatchSize, err = positiveInt(os.Getenv("CMC_BATCH_SIZE"), "CMC_BATCH_SIZE", 100); err != nil {
 		return cfg, err

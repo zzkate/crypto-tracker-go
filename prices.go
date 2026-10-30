@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 )
 
@@ -22,40 +23,38 @@ type LatestPrice struct {
 	FetchedAt *string  `json:"fetchedAt"`
 }
 
-func insertPrice(db *sql.DB, coinID int, price float64, currency, fetchedAt string) (PricePoint, error) {
-	res, err := db.Exec(
-		"INSERT INTO price_history (coin_id, price, currency, fetched_at) VALUES (?, ?, ?, ?)",
+func insertPrice(db dbExecer, coinID int, price float64, currency, fetchedAt string) (PricePoint, error) {
+	var id int
+	err := db.QueryRow(
+		"INSERT INTO price_history (coin_id, price, currency, fetched_at) VALUES ($1, $2, $3, $4) RETURNING id",
 		coinID, price, currency, fetchedAt,
-	)
+	).Scan(&id)
 	if err != nil {
 		return PricePoint{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return PricePoint{}, err
-	}
-	return PricePoint{ID: int(id), CoinID: coinID, Price: price, Currency: currency, FetchedAt: fetchedAt}, nil
+	return PricePoint{ID: id, CoinID: coinID, Price: price, Currency: currency, FetchedAt: fetchedAt}, nil
 }
 
-func listPrices(db *sql.DB, coinID int, from, to string, limit, offset int) ([]PricePoint, error) {
-	clauses := []string{"coin_id = ?"}
+func listPrices(db dbExecer, coinID int, from, to string, limit, offset int) ([]PricePoint, error) {
+	clauses := []string{"coin_id = $1"}
 	args := []any{coinID}
 	if from != "" {
-		clauses = append(clauses, "fetched_at >= ?")
+		clauses = append(clauses, fmt.Sprintf("fetched_at >= $%d", len(args)+1))
 		args = append(args, from)
 	}
 	if to != "" {
-		clauses = append(clauses, "fetched_at <= ?")
+		clauses = append(clauses, fmt.Sprintf("fetched_at <= $%d", len(args)+1))
 		args = append(args, to)
 	}
+	limitPh := fmt.Sprintf("$%d", len(args)+1)
+	offsetPh := fmt.Sprintf("$%d", len(args)+2)
 	args = append(args, limit, offset)
 
-	rows, err := db.Query(
-		"SELECT id, coin_id, price, currency, fetched_at FROM price_history WHERE "+
-			strings.Join(clauses, " AND ")+
-			" ORDER BY fetched_at DESC, id DESC LIMIT ? OFFSET ?",
-		args...,
-	)
+	query := "SELECT id, coin_id, price, currency, fetched_at FROM price_history WHERE " +
+		strings.Join(clauses, " AND ") +
+		" ORDER BY fetched_at DESC, id DESC LIMIT " + limitPh + " OFFSET " + offsetPh
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -72,15 +71,15 @@ func listPrices(db *sql.DB, coinID int, from, to string, limit, offset int) ([]P
 	return points, rows.Err()
 }
 
-func countPrices(db *sql.DB, coinID int, from, to string) (int, error) {
-	clauses := []string{"coin_id = ?"}
+func countPrices(db dbExecer, coinID int, from, to string) (int, error) {
+	clauses := []string{"coin_id = $1"}
 	args := []any{coinID}
 	if from != "" {
-		clauses = append(clauses, "fetched_at >= ?")
+		clauses = append(clauses, fmt.Sprintf("fetched_at >= $%d", len(args)+1))
 		args = append(args, from)
 	}
 	if to != "" {
-		clauses = append(clauses, "fetched_at <= ?")
+		clauses = append(clauses, fmt.Sprintf("fetched_at <= $%d", len(args)+1))
 		args = append(args, to)
 	}
 	var n int
@@ -88,10 +87,10 @@ func countPrices(db *sql.DB, coinID int, from, to string) (int, error) {
 	return n, err
 }
 
-func getLatestPrice(db *sql.DB, coinID int) (PricePoint, error) {
+func getLatestPrice(db dbExecer, coinID int) (PricePoint, error) {
 	var p PricePoint
 	err := db.QueryRow(
-		"SELECT id, coin_id, price, currency, fetched_at FROM price_history WHERE coin_id = ? ORDER BY fetched_at DESC, id DESC LIMIT 1",
+		"SELECT id, coin_id, price, currency, fetched_at FROM price_history WHERE coin_id = $1 ORDER BY fetched_at DESC, id DESC LIMIT 1",
 		coinID,
 	).Scan(&p.ID, &p.CoinID, &p.Price, &p.Currency, &p.FetchedAt)
 	if err == sql.ErrNoRows {
@@ -100,8 +99,8 @@ func getLatestPrice(db *sql.DB, coinID int) (PricePoint, error) {
 	return p, err
 }
 
-func listLatestPrices(db *sql.DB, limit, offset int) ([]LatestPrice, error) {
-	// Каждый подзапрос — index-seek по (coin_id, fetched_at DESC, id DESC): оптимально.
+func listLatestPrices(db dbExecer, limit, offset int) ([]LatestPrice, error) {
+	// Каждый подзапрос — index-scan по (coin_id, fetched_at DESC, id DESC): оптимально.
 	rows, err := db.Query(
 		`SELECT c.id AS coin_id, c.symbol, c.name, c.price_currency,
 		        p.price, p.currency, p.fetched_at
@@ -112,7 +111,7 @@ func listLatestPrices(db *sql.DB, limit, offset int) ([]LatestPrice, error) {
 		   ORDER BY fetched_at DESC, id DESC
 		   LIMIT 1
 		 )
-		 ORDER BY c.id ASC LIMIT ? OFFSET ?`,
+		 ORDER BY c.id ASC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
 	if err != nil {

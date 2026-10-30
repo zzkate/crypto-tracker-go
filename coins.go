@@ -26,24 +26,21 @@ func scanCoin(row interface{ Scan(...any) error }) (Coin, error) {
 	return c, nil
 }
 
-func createCoin(db *sql.DB, symbol, name, currency, createdAt string) (Coin, error) {
-	res, err := db.Exec(
-		"INSERT INTO coins (symbol, name, price_currency, created_at) VALUES (?, ?, ?, ?)",
+func createCoin(db dbExecer, symbol, name, currency, createdAt string) (Coin, error) {
+	var id int
+	err := db.QueryRow(
+		"INSERT INTO coins (symbol, name, price_currency, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
 		symbol, name, currency, createdAt,
-	)
+	).Scan(&id)
 	if err != nil {
 		return Coin{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return Coin{}, err
-	}
-	return getCoin(db, int(id))
+	return getCoin(db, id)
 }
 
-func getCoin(db *sql.DB, id int) (Coin, error) {
+func getCoin(db dbExecer, id int) (Coin, error) {
 	c, err := scanCoin(db.QueryRow(
-		"SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins WHERE id = ?",
+		"SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins WHERE id = $1",
 		id,
 	))
 	if err == sql.ErrNoRows {
@@ -53,7 +50,7 @@ func getCoin(db *sql.DB, id int) (Coin, error) {
 }
 
 // allCoins возвращает все монеты (используется синхронизацией, без пагинации).
-func allCoins(db *sql.DB) ([]Coin, error) {
+func allCoins(db dbExecer) ([]Coin, error) {
 	rows, err := db.Query("SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins ORDER BY id ASC")
 	if err != nil {
 		return nil, err
@@ -71,9 +68,9 @@ func allCoins(db *sql.DB) ([]Coin, error) {
 	return coins, rows.Err()
 }
 
-func listCoins(db *sql.DB, limit, offset int) ([]Coin, error) {
+func listCoins(db dbExecer, limit, offset int) ([]Coin, error) {
 	rows, err := db.Query(
-		"SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins ORDER BY id ASC LIMIT ? OFFSET ?",
+		"SELECT id, symbol, name, price_currency, last_updated_at, created_at FROM coins ORDER BY id ASC LIMIT $1 OFFSET $2",
 		limit, offset,
 	)
 	if err != nil {
@@ -92,13 +89,13 @@ func listCoins(db *sql.DB, limit, offset int) ([]Coin, error) {
 	return coins, rows.Err()
 }
 
-func countCoins(db *sql.DB) (int, error) {
+func countCoins(db dbExecer) (int, error) {
 	var n int
 	err := db.QueryRow("SELECT COUNT(*) FROM coins").Scan(&n)
 	return n, err
 }
 
-func updateCoin(db *sql.DB, id int, symbol, name *string) (Coin, error) {
+func updateCoin(db dbExecer, id int, symbol, name *string) (Coin, error) {
 	cur, err := getCoin(db, id)
 	if err != nil {
 		return Coin{}, err
@@ -110,14 +107,14 @@ func updateCoin(db *sql.DB, id int, symbol, name *string) (Coin, error) {
 	if name != nil {
 		nextName = *name
 	}
-	if _, err := db.Exec("UPDATE coins SET symbol = ?, name = ? WHERE id = ?", nextSymbol, nextName, id); err != nil {
+	if _, err := db.Exec("UPDATE coins SET symbol = $1, name = $2 WHERE id = $3", nextSymbol, nextName, id); err != nil {
 		return Coin{}, err
 	}
 	return getCoin(db, id)
 }
 
-func deleteCoin(db *sql.DB, id int) (bool, error) {
-	res, err := db.Exec("DELETE FROM coins WHERE id = ?", id)
+func deleteCoin(db dbExecer, id int) (bool, error) {
+	res, err := db.Exec("DELETE FROM coins WHERE id = $1", id)
 	if err != nil {
 		return false, err
 	}
@@ -128,7 +125,7 @@ func deleteCoin(db *sql.DB, id int) (bool, error) {
 	return n > 0, nil
 }
 
-func touchCoin(db *sql.DB, id int, updatedAt string) error {
-	_, err := db.Exec("UPDATE coins SET last_updated_at = ? WHERE id = ?", updatedAt, id)
+func touchCoin(db dbExecer, id int, updatedAt string) error {
+	_, err := db.Exec("UPDATE coins SET last_updated_at = $1 WHERE id = $2", updatedAt, id)
 	return err
 }

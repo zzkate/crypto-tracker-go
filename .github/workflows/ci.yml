@@ -12,6 +12,22 @@ jobs:
   test:
     name: Build & tests (Go)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test?sslmode=disable
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,24 +67,31 @@ jobs:
             exit 1
           fi
 
-      - name: Run container
+      - name: Run postgres + app
         env:
           APP_API_KEY: ${{ secrets.APP_API_KEY }}
         run: |
-          docker run -d --name cg-ci -p 3000:3000 \
-            -e APP_API_KEY="$APP_API_KEY" -e DB_PATH=/data/crypto.db \
+          docker network create cg-net
+          docker run -d --name cg-db --network cg-net \
+            -e POSTGRES_USER=crypto -e POSTGRES_PASSWORD=crypto -e POSTGRES_DB=crypto \
+            postgres:16-alpine
+          docker run -d --name cg-app --network cg-net -p 3000:3000 \
+            -e APP_API_KEY="$APP_API_KEY" \
+            -e DATABASE_URL="postgres://crypto:crypto@cg-db:5432/crypto?sslmode=disable" \
             crypto-tracker-go:ci
 
       - name: Wait for /health
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 40); do
             if curl -fsS http://127.0.0.1:3000/health; then exit 0; fi
             sleep 1
           done
-          echo "container did not become healthy"
-          docker logs cg-ci
+          echo "app did not become healthy"
+          docker logs cg-app || true
           exit 1
 
-      - name: Stop container
+      - name: Cleanup
         if: always()
-        run: docker rm -f cg-ci || true
+        run: |
+          docker rm -f cg-app cg-db || true
+          docker network rm cg-net || true

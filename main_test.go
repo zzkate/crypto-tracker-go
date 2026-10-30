@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -28,10 +29,7 @@ func (m *mockCmc) fetchPrices(ctx context.Context, symbols []string, currency st
 
 func newTestServer(t *testing.T, client cmcAPI) (http.Handler, *app, *sql.DB, *syncService) {
 	t.Helper()
-	db, err := openDB(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	if client == nil {
 		client = disabledClient{}
 	}
@@ -42,6 +40,23 @@ func newTestServer(t *testing.T, client cmcAPI) (http.Handler, *app, *sql.DB, *s
 	syncSvc := newSyncService(db, client, cfg.Currency, 100, 0, 200)
 	app := newApp(db, cfg, syncSvc)
 	return app.routes(), app, db, syncSvc
+}
+
+func openTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	db, err := openDB(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("TRUNCATE coins, price_history CASCADE"); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	return db
 }
 
 func doReq(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -318,7 +333,7 @@ func TestSyncBatching(t *testing.T) {
 		}
 		return m, nil
 	}}
-	db, _ := openDB(":memory:")
+	db := openTestDB(t)
 	defer db.Close()
 	svc := newSyncService(db, client, "USD", 2, 0, 200)
 
@@ -371,7 +386,7 @@ func TestSyncSkipOnConcurrent(t *testing.T) {
 		<-release
 		return map[string]float64{"BTC": 1}, nil
 	}}
-	db, _ := openDB(":memory:")
+	db := openTestDB(t)
 	defer db.Close()
 	svc := newSyncService(db, client, "USD", 100, 0, 200)
 	if _, err := createCoin(db, "BTC", "Bitcoin", "USD", "2026-01-01T00:00:00Z"); err != nil {

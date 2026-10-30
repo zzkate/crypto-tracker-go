@@ -92,6 +92,14 @@ func (s *syncService) syncOnce(ctx context.Context) (syncResult, error) {
 	}
 
 	fetchedAt := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Пишем в одной транзакции: атомарно и быстрее, чем N автокоммитов.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return syncResult{}, err
+	}
+	defer tx.Rollback() // no-op после Commit
+
 	result := syncResult{}
 	for _, c := range coins {
 		p, ok := prices[c.Symbol]
@@ -99,13 +107,16 @@ func (s *syncService) syncOnce(ctx context.Context) (syncResult, error) {
 			result.Skipped++
 			continue
 		}
-		if _, err := insertPrice(s.db, c.ID, p, s.currency, fetchedAt); err != nil {
+		if _, err := insertPrice(tx, c.ID, p, s.currency, fetchedAt); err != nil {
 			return syncResult{}, err
 		}
-		if err := touchCoin(s.db, c.ID, fetchedAt); err != nil {
+		if err := touchCoin(tx, c.ID, fetchedAt); err != nil {
 			return syncResult{}, err
 		}
 		result.Updated++
+	}
+	if err := tx.Commit(); err != nil {
+		return syncResult{}, err
 	}
 	return result, nil
 }
