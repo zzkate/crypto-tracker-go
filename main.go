@@ -12,6 +12,8 @@ import (
 )
 
 func main() {
+	loadDotEnv(".env")
+
 	cfg, err := LoadConfig()
 	if err != nil {
 		log.Fatalf("config: %v", err)

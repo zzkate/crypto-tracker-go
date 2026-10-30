@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build & tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        run: go test -race ./...
+
+  docker:
+    name: Docker build & smoke
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t crypto-tracker-go:ci .
+
+      - name: Check APP_API_KEY secret
+        env:
+          APP_API_KEY: ${{ secrets.APP_API_KEY }}
+        run: |
+          if [ -z "$APP_API_KEY" ]; then
+            echo "::error::Repository secret APP_API_KEY is not set"
+            exit 1
+          fi
+
+      - name: Run container
+        env:
+          APP_API_KEY: ${{ secrets.APP_API_KEY }}
+        run: |
+          docker run -d --name cg-ci -p 3000:3000 \
+            -e APP_API_KEY="$APP_API_KEY" -e DB_PATH=/data/crypto.db \
+            crypto-tracker-go:ci
+
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/health; then exit 0; fi
+            sleep 1
+          done
+          echo "container did not become healthy"
+          docker logs cg-ci
+          exit 1
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f cg-ci || true

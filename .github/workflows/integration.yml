@@ -1,0 +1,44 @@
+name: Integration (CoinMarketCap)
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: 'Символы через запятую'
+        required: false
+        default: 'BTC,ETH'
+      currency:
+        description: 'Валюта цен'
+        required: false
+        default: 'USD'
+
+jobs:
+  integration:
+    name: Real CoinMarketCap sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build
+        run: go build -o /tmp/crypto-tracker-go .
+
+      - name: Integration run
+        env:
+          APP_API_KEY: ${{ secrets.APP_API_KEY }}
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+          SYMBOLS: ${{ inputs.symbols }}
+          PRICE_CURRENCY: ${{ inputs.currency }}
+          PORT: '3000'
+        run: bash scripts/integration.sh
+
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/crypto-integration.log || true
