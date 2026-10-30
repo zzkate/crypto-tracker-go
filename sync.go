@@ -91,7 +91,7 @@ func (s *syncService) syncOnce(ctx context.Context) (syncResult, error) {
 		}
 	}
 
-	fetchedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	fetchedAt := canonTime(time.Now())
 
 	// Пишем в одной транзакции: атомарно и быстрее, чем N автокоммитов.
 	tx, err := s.db.BeginTx(ctx, nil)

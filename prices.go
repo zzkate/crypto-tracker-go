@@ -24,6 +24,7 @@ type LatestPrice struct {
 }
 
 func insertPrice(db dbExecer, coinID int, price float64, currency, fetchedAt string) (PricePoint, error) {
+	fetchedAt = normTime(fetchedAt)
 	var id int
 	err := db.QueryRow(
 		"INSERT INTO price_history (coin_id, price, currency, fetched_at) VALUES ($1, $2, $3, $4) RETURNING id",

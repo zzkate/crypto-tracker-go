@@ -65,7 +65,7 @@ func parseDate(q url.Values, name string) (string, error) {
 	if err != nil {
 		return "", badRequest("%s must be a valid ISO date", name)
 	}
-	return t.UTC().Format(time.RFC3339), nil
+	return canonTime(t), nil
 }
 
 // parseCoinInput разбирает тело монеты. partial=true — для PATCH.

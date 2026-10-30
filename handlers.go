@@ -91,7 +91,7 @@ func (a *app) createCoin(w http.ResponseWriter, r *http.Request) {
 		a.handleError(w, err)
 		return
 	}
-	coin, err := createCoin(a.db, *symbol, *name, a.config.Currency, time.Now().UTC().Format(time.RFC3339Nano))
+	coin, err := createCoin(a.db, *symbol, *name, a.config.Currency, canonTime(time.Now()))
 	if err != nil {
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "conflict", "coin with this symbol already exists")
