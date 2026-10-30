@@ -1,0 +1,385 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Crypto Price Tracker API",
+    "version": "1.0.0",
+    "description": "REST API для управления списком отслеживаемых криптовалют, получения актуальных и исторических цен (USD) из CoinMarketCap."
+  },
+  "servers": [
+    { "url": "/", "description": "Current host" }
+  ],
+  "tags": [
+    { "name": "System" },
+    { "name": "Coins" },
+    { "name": "Prices" },
+    { "name": "Sync" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Сервис работает",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "status": { "type": "string", "example": "ok" } },
+                  "required": ["status"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/coins": {
+      "get": {
+        "tags": ["Coins"],
+        "summary": "Список отслеживаемых криптовалют",
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Offset" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Массив монет",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Общее число монет",
+                "schema": { "type": "integer" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Coin" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Coins"],
+        "summary": "Добавить криптовалюту в отслеживание",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CoinInput" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Создано",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Coin" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/coins/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/CoinId" }],
+      "get": {
+        "tags": ["Coins"],
+        "summary": "Получить монету по id",
+        "responses": {
+          "200": {
+            "description": "Монета",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Coin" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["Coins"],
+        "summary": "Обновить символ или название",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CoinPatch" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Обновлённая монета. Если данные не изменились — 200 и X-Changed: false (UPDATE не выполняется).",
+            "headers": {
+              "X-Changed": {
+                "description": "true — данные обновлены, false — изменений не было",
+                "schema": { "type": "string", "enum": ["true", "false"] }
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Coin" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "delete": {
+        "tags": ["Coins"],
+        "summary": "Удалить монету из отслеживания",
+        "responses": {
+          "204": { "description": "Удалено" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/coins/{id}/prices": {
+      "parameters": [{ "$ref": "#/components/parameters/CoinId" }],
+      "get": {
+        "tags": ["Prices"],
+        "summary": "История цен монеты",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "Нижняя граница fetched_at (ISO 8601)"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time" },
+            "description": "Верхняя граница fetched_at (ISO 8601)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 }
+          },
+          { "$ref": "#/components/parameters/Offset" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Точки истории (сначала новые)",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Общее число точек истории с учётом фильтров",
+                "schema": { "type": "integer" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PricePoint" } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/coins/{id}/prices/latest": {
+      "parameters": [{ "$ref": "#/components/parameters/CoinId" }],
+      "get": {
+        "tags": ["Prices"],
+        "summary": "Последняя сохранённая цена монеты",
+        "responses": {
+          "200": {
+            "description": "Последняя цена",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PricePoint" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/prices/latest": {
+      "get": {
+        "tags": ["Prices"],
+        "summary": "Актуальные цены всех отслеживаемых монет",
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Offset" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Последняя цена по каждой монете (price/fetchedAt могут быть null, если синхронизации ещё не было)",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Общее число монет",
+                "schema": { "type": "integer" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LatestPrice" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/sync": {
+      "post": {
+        "tags": ["Sync"],
+        "summary": "Запустить синхронизацию цен вручную",
+        "responses": {
+          "200": {
+            "description": "Результат синхронизации",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SyncResult" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/UpstreamError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Токен из переменной окружения APP_API_KEY"
+      }
+    },
+    "parameters": {
+      "CoinId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 1 }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 100 }
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "schema": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Ошибка валидации",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "Unauthorized": {
+        "description": "Нет или неверный Bearer token",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "NotFound": {
+        "description": "Ресурс не найден",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "Conflict": {
+        "description": "Монета с таким символом уже отслеживается",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "UpstreamError": {
+        "description": "Ошибка CoinMarketCap",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      }
+    },
+    "schemas": {
+      "CoinInput": {
+        "type": "object",
+        "required": ["symbol", "name"],
+        "properties": {
+          "symbol": { "type": "string", "example": "BTC", "description": "2-10 символов A-Z0-9" },
+          "name": { "type": "string", "example": "Bitcoin", "minLength": 1, "maxLength": 100 }
+        },
+        "additionalProperties": false
+      },
+      "CoinPatch": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "symbol": { "type": "string", "example": "BTC" },
+          "name": { "type": "string", "example": "Bitcoin" }
+        },
+        "additionalProperties": false
+      },
+      "Coin": {
+        "type": "object",
+        "required": ["id", "symbol", "name", "priceCurrency", "createdAt"],
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "symbol": { "type": "string", "example": "BTC" },
+          "name": { "type": "string", "example": "Bitcoin" },
+          "priceCurrency": { "type": "string", "example": "USD" },
+          "lastUpdatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PricePoint": {
+        "type": "object",
+        "required": ["id", "coinId", "price", "currency", "fetchedAt"],
+        "properties": {
+          "id": { "type": "integer", "example": 10 },
+          "coinId": { "type": "integer", "example": 1 },
+          "price": { "type": "number", "example": 65000.12 },
+          "currency": { "type": "string", "example": "USD" },
+          "fetchedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "LatestPrice": {
+        "type": "object",
+        "required": ["coinId", "symbol", "name", "price", "currency", "fetchedAt"],
+        "properties": {
+          "coinId": { "type": "integer", "example": 1 },
+          "symbol": { "type": "string", "example": "BTC" },
+          "name": { "type": "string", "example": "Bitcoin" },
+          "price": { "type": "number", "nullable": true, "example": 65000.12 },
+          "currency": { "type": "string", "example": "USD" },
+          "fetchedAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "SyncResult": {
+        "type": "object",
+        "required": ["updated", "skipped"],
+        "properties": {
+          "updated": { "type": "integer", "example": 2 },
+          "skipped": { "type": "integer", "example": 0 }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string", "example": "validation_error" },
+          "message": { "type": "string", "example": "symbol and name are required" }
+        }
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }]
+}

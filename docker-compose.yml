@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      DB_PATH: /data/crypto.db
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - crypto-data:/data
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  crypto-data:
